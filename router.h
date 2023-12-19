@@ -234,8 +234,8 @@ typedef struct _route_entry {
   ipv4_addr_t mask;
   /// The next hop IP address.
   ipv4_addr_t next_hop_ip;
-  /// The interface by address.
-  ipv4_addr_t interface_ip;
+  
+  bool is_direct;
 
   /// The list link
   list_entry_t link;
@@ -295,20 +295,20 @@ route_table_match(route_table_t* table, ipv4_addr_t ip) {
 
 /// allocate a route entry
 static inline route_entry_t* route_table_alloc() {
-  return (route_entry_t*)malloc(sizeof(route_entry_t));
+  route_entry_t* entry = (route_entry_t*)malloc(sizeof(route_entry_t));
+  entry->is_direct = false;
+  return entry;
 }
 
 static inline void show_route_entry(route_entry_t* entry) {
   printf(
-    "dst: %u.%u.%u.%u mask: %u.%u.%u.%u gw: %u.%u.%u.%u if: %u.%u.%u.%u\n",
+    "dst: %u.%u.%u.%u mask: %u.%u.%u.%u gw: %u.%u.%u.%u\n",
     entry->dst_ip & 0xff, (entry->dst_ip >> 8) & 0xff,
     (entry->dst_ip >> 16) & 0xff, (entry->dst_ip >> 24) & 0xff,
     entry->mask & 0xff, (entry->mask >> 8) & 0xff, (entry->mask >> 16) & 0xff,
     (entry->mask >> 24) & 0xff, entry->next_hop_ip & 0xff,
     (entry->next_hop_ip >> 8) & 0xff, (entry->next_hop_ip >> 16) & 0xff,
-    (entry->next_hop_ip >> 24) & 0xff, entry->interface_ip & 0xff,
-    (entry->interface_ip >> 8) & 0xff, (entry->interface_ip >> 16) & 0xff,
-    (entry->interface_ip >> 24) & 0xff
+    (entry->next_hop_ip >> 24) & 0xff
   );
 }
 
@@ -336,13 +336,12 @@ void show_all_devices(pcap_if_t* alldevsp);
 
 pcap_if_t* find_device_by_number(pcap_if_t* alldevsp, int number);
 
-pcap_if_t* find_device_by_ip(pcap_if_t* alldevsp, ipv4_addr_t ip);
-
 extern arp_cache_t arp_cache;
 extern route_table_t route_table;
 extern bool running;
 extern pcap_if_t* alldevsp;
 extern mac_addr_t host_mac;
+extern ipv4_addr_t host_ip;
 
 void show_mac_addr(mac_addr_t mac);
 
