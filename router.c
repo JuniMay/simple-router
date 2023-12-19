@@ -19,6 +19,7 @@ bool running = false;
 pcap_if_t* alldevsp;
 mac_addr_t host_mac;
 ipv4_addr_t host_ip;
+uint8_t buffer[65535];
 
 void show_mac_addr(mac_addr_t mac) {
   for (size_t i = 0; i < 6; i++) {
@@ -250,11 +251,15 @@ void show_route_table() {
 }
 
 void router_handler(pcap_t* handle) {
-  uint8_t buffer[65535];
+
+  get_host_mac(handle, host_ip, &host_mac);
+  printf("[ router ] host mac: ");
+  show_mac_addr(host_mac);
+  printf("\n");
 
   while (running) {
-    struct pcap_pkthdr* header;
-    const uint8_t* packet;
+    struct pcap_pkthdr* header = NULL;
+    const uint8_t* packet = NULL;
     int result = pcap_next_ex(handle, &header, &packet);
 
     if (result == -1) {
@@ -263,6 +268,10 @@ void router_handler(pcap_t* handle) {
     }
 
     if (header->caplen == 0) {
+      continue;
+    }
+
+    if (packet == NULL) {
       continue;
     }
 
@@ -376,6 +385,9 @@ void start_routing() {
     }
   }
 
+  printf("[ router ] host ip: %u.%u.%u.%u\n", host_ip & 0xff,
+         (host_ip >> 8) & 0xff, (host_ip >> 16) & 0xff, (host_ip >> 24) & 0xff);
+
   char errbuf[PCAP_ERRBUF_SIZE];
 
   pcap_t* handle = pcap_create(device->name, errbuf);
@@ -391,9 +403,6 @@ void start_routing() {
   if (pcap_activate(handle) != 0) {
     fprintf(stderr, "error activating pcap handle: %s\n", pcap_geterr(handle));
   }
-
-  get_host_mac(handle, host_ip, &host_mac);
-
   // start and detach
   HANDLE thread = CreateThread(
     NULL, 0, (LPTHREAD_START_ROUTINE)router_handler, (LPVOID)handle, 0, NULL
