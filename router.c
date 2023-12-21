@@ -242,10 +242,22 @@ void show_arp_cache() {
 
 void show_route_table() {
   printf("route table:\n");
+  // route_entry_t* entry;
+  // FOR_EACH_ENTRY(entry, &route_table.entries, route_entry_t, link) {
+  //   printf("    ");
+  //   show_route_entry(entry);
+  // }
+
   route_entry_t* entry;
-  FOR_EACH_ENTRY(entry, &route_table.entries, route_entry_t, link) {
-    printf("    ");
-    show_route_entry(entry);
+
+  for (int i = 0; i <= 31; i++) {
+    route_entry_t* route_hash = route_table.hash[i];
+    list_entry_t* entry;
+    FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
+      route_entry_t* route_entry = container_of(entry, route_entry_t, link);
+      printf("    ");
+      show_route_entry(route_entry);
+    }
   }
 }
 

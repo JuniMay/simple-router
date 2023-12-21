@@ -226,7 +226,7 @@ static inline void arp_cache_free_all(arp_cache_t* cache) {
   }
 }
 
-/// Route table entry.
+/// Route table entry using hash table.
 typedef struct _route_entry {
   /// The destination IP address.
   ipv4_addr_t dst_ip;
@@ -241,33 +241,85 @@ typedef struct _route_entry {
   list_entry_t link;
 } route_entry_t;
 
+#define ROUTE_HASH_MODULO 32
+
+typedef struct _route_hash {
+  list_entry_t entries[ROUTE_HASH_MODULO];
+} route_hash_t;
+
 /// The route table.
 typedef struct _route_table {
-  /// The list of entries.
-  list_entry_t entries;
+  /// The list of tables.
+  route_hash_t tables[32];
 } route_table_t;
 
 /// Initialize the route table.
 static inline void route_table_init(route_table_t* table) {
-  list_init(&table->entries);
+  // list_init(&table->entries);
+  for (int i = 0; i < 32; i++) {
+    for (int j = 0; j < ROUTE_HASH_MODULO; j++) {
+      list_init(&table->tables[i].entries[j]);
+    }
+  }
 }
 
 /// Add an entry to the route table.
 static inline void route_table_add(route_table_t* table, route_entry_t* entry) {
-  list_add(&table->entries, &entry->link);
+  // list_add(&table->entries, &entry->link);
+  uint32_t mask = entry->mask;
+
+  // decide which table to hold this entry
+  int table_index = 0;
+  while (mask & 1 == 0) {
+    mask >>= 1;
+    table_index++;
+  }
+
+  // calculate hash
+  uint32_t hash = entry->dst_ip % ROUTE_HASH_MODULO;
+
+  // add to table
+  route_hash_t* route_hash = &table->tables[table_index];
+
+  // just add, not check
+  list_add(&route_hash->entries[hash], &entry->link);
+
+  // printf("add to table %d, hash %d\n", table_index, hash);
 }
 
 /// Remove an entry from the route table.
 static inline void route_table_remove(route_entry_t* entry) {
+  // list_del(&entry->link);
+  uint32_t mask = entry->mask;
+
+  int table_index = 0;
+  while (mask & 1 == 0) {
+    mask >>= 1;
+    table_index++;
+  }
+
+  uint32_t hash = entry->dst_ip % ROUTE_HASH_MODULO;
+
+  route_hash_t* route_hash = &route_table.tables[table_index];
+
   list_del(&entry->link);
 }
 
 /// Find an entry in the route table.
 static inline route_entry_t*
 route_table_find(route_table_t* table, ipv4_addr_t ip, ipv4_addr_t mask) {
+  int table_index = 0;
+  while (mask & 1 == 0) {
+    mask >>= 1;
+    table_index++;
+  }
+
+  uint32_t hash = ip % ROUTE_HASH_MODULO;
+
+  route_hash_t* route_hash = &table->tables[table_index];
+
   list_entry_t* entry;
-  for (entry = table->entries.next; entry != &table->entries;
-       entry = entry->next) {
+  FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
     route_entry_t* route_entry = container_of(entry, route_entry_t, link);
     if (route_entry->dst_ip == ip && route_entry->mask == mask) {
       return route_entry;
@@ -279,18 +331,18 @@ route_table_find(route_table_t* table, ipv4_addr_t ip, ipv4_addr_t mask) {
 /// Longest prefix match
 static inline route_entry_t*
 route_table_match(route_table_t* table, ipv4_addr_t ip) {
-  list_entry_t* entry;
-  route_entry_t* match = NULL;
-  for (entry = table->entries.next; entry != &table->entries;
-       entry = entry->next) {
-    route_entry_t* route_entry = container_of(entry, route_entry_t, link);
-    if ((ip & route_entry->mask) == route_entry->dst_ip) {
-      if (match == NULL || route_entry->mask > match->mask) {
-        match = route_entry;
+  uint32_t hash = ip % ROUTE_HASH_MODULO;
+  for (int i = 0; i <= 31; i++) {
+    route_hash_t* route_hash = &table->tables[i];
+    list_entry_t* entry;
+    FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
+      route_entry_t* route_entry = container_of(entry, route_entry_t, link);
+      if ((ip & route_entry->mask) == route_entry->dst_ip) {
+        return route_entry;
       }
     }
   }
-  return match;
+  return NULL;
 }
 
 /// allocate a route entry
@@ -319,12 +371,17 @@ static inline void route_table_free(route_entry_t* entry) {
 
 /// free all route entries
 static inline void route_table_free_all(route_table_t* table) {
-  list_entry_t* entry;
-  for (entry = table->entries.next; entry != &table->entries;) {
-    list_entry_t* next = entry->next;
-    route_entry_t* route_entry = container_of(entry, route_entry_t, link);
-    route_table_free(route_entry);
-    entry = next;
+  for (int i = 0; i < 32; i++) {
+    for (int j = 0; j < ROUTE_HASH_MODULO; j++) {
+      list_entry_t* entry;
+      for (entry = table->tables[i].entries[j].next;
+           entry != &table->tables[i].entries[j];) {
+        list_entry_t* next = entry->next;
+        route_entry_t* route_entry = container_of(entry, route_entry_t, link);
+        route_table_free(route_entry);
+        entry = next;
+      }
+    }
   }
 }
 
