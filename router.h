@@ -250,13 +250,13 @@ typedef struct _route_hash {
 /// The route table.
 typedef struct _route_table {
   /// The list of tables.
-  route_hash_t tables[32];
+  route_hash_t tables[33];
 } route_table_t;
 
 /// Initialize the route table.
 static inline void route_table_init(route_table_t* table) {
   // list_init(&table->entries);
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i <= 32; i++) {
     for (int j = 0; j < ROUTE_HASH_MODULO; j++) {
       list_init(&table->tables[i].entries[j]);
     }
@@ -270,59 +270,54 @@ static inline void route_table_add(route_table_t* table, route_entry_t* entry) {
 
   // decide which table to hold this entry
   int table_index = 0;
-  while (mask & 1 == 0) {
+  while ((mask & 1) == 1) {
     mask >>= 1;
     table_index++;
   }
 
   // calculate hash
-  uint32_t hash = entry->dst_ip % ROUTE_HASH_MODULO;
+  uint32_t hash = (ntohl(entry->dst_ip) >> 8) % ROUTE_HASH_MODULO;
+
+  printf("table_index: %d, hash: %d\n", table_index, hash);
 
   // add to table
   route_hash_t* route_hash = &table->tables[table_index];
 
   // just add, not check
   list_add(&route_hash->entries[hash], &entry->link);
-
-  // printf("add to table %d, hash %d\n", table_index, hash);
 }
 
 /// Remove an entry from the route table.
 static inline void route_table_remove(route_entry_t* entry) {
-  // list_del(&entry->link);
-  uint32_t mask = entry->mask;
-
-  int table_index = 0;
-  while (mask & 1 == 0) {
-    mask >>= 1;
-    table_index++;
-  }
-
-  uint32_t hash = entry->dst_ip % ROUTE_HASH_MODULO;
-
-  route_hash_t* route_hash = &route_table.tables[table_index];
-
   list_del(&entry->link);
 }
 
 /// Find an entry in the route table.
 static inline route_entry_t*
 route_table_find(route_table_t* table, ipv4_addr_t ip, ipv4_addr_t mask) {
+  uint32_t req_mask = mask;
+
   int table_index = 0;
-  while (mask & 1 == 0) {
+  while ((mask & 1) == 1) {
     mask >>= 1;
     table_index++;
   }
 
-  uint32_t hash = ip % ROUTE_HASH_MODULO;
+  uint32_t hash = (ntohl(ip) >> 8) % ROUTE_HASH_MODULO;
+
+  printf("table_index: %d, hash: %d\n", table_index, hash);
 
   route_hash_t* route_hash = &table->tables[table_index];
 
-  list_entry_t* entry;
+  route_entry_t* entry;
   FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
-    route_entry_t* route_entry = container_of(entry, route_entry_t, link);
-    if (route_entry->dst_ip == ip && route_entry->mask == mask) {
-      return route_entry;
+    // printf("entry: %u.%u.%u.%u\n", entry->dst_ip & 0xff, (entry->dst_ip >> 8) & 0xff, (entry->dst_ip >> 16) & 0xff, (entry->dst_ip >> 24) & 0xff);
+    // printf("mask: %u.%u.%u.%u\n", entry->mask & 0xff, (entry->mask >> 8) & 0xff, (entry->mask >> 16) & 0xff, (entry->mask >> 24) & 0xff);
+    // printf("ip: %u.%u.%u.%u\n", ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+    // printf("mask: %u.%u.%u.%u\n", mask & 0xff, (mask >> 8) & 0xff, (mask >> 16) & 0xff, (mask >> 24) & 0xff);
+    if (entry->dst_ip == ip && entry->mask == req_mask) {
+      printf("found\n");
+      return entry;
     }
   }
   return NULL;
@@ -331,14 +326,14 @@ route_table_find(route_table_t* table, ipv4_addr_t ip, ipv4_addr_t mask) {
 /// Longest prefix match
 static inline route_entry_t*
 route_table_match(route_table_t* table, ipv4_addr_t ip) {
-  uint32_t hash = ip % ROUTE_HASH_MODULO;
-  for (int i = 0; i <= 31; i++) {
+  uint32_t hash = (ntohl(ip) >> 8) % ROUTE_HASH_MODULO;
+  for (int i = 32; i >= 0; i--) {
     route_hash_t* route_hash = &table->tables[i];
-    list_entry_t* entry;
+    route_entry_t* entry;
     FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
-      route_entry_t* route_entry = container_of(entry, route_entry_t, link);
-      if ((ip & route_entry->mask) == route_entry->dst_ip) {
-        return route_entry;
+
+      if ((ip & entry->mask) == entry->dst_ip) {
+        return entry;
       }
     }
   }

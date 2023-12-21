@@ -248,15 +248,14 @@ void show_route_table() {
   //   show_route_entry(entry);
   // }
 
-  route_entry_t* entry;
-
   for (int i = 0; i <= 31; i++) {
-    route_entry_t* route_hash = route_table.hash[i];
-    list_entry_t* entry;
-    FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
-      route_entry_t* route_entry = container_of(entry, route_entry_t, link);
-      printf("    ");
-      show_route_entry(route_entry);
+    route_hash_t* route_hash = &route_table.tables[i];
+    route_entry_t* entry;
+    for (int hash = 0; hash < ROUTE_HASH_MODULO; hash++) {
+      FOR_EACH_ENTRY(entry, &route_hash->entries[hash], route_entry_t, link) {
+        printf("    ");
+        show_route_entry(entry);
+      }
     }
   }
 }
@@ -279,6 +278,10 @@ void router_handler(pcap_t* handle) {
     }
 
     ether_hdr_t* ether_hdr = (ether_hdr_t*)packet;
+
+    if (ether_hdr == NULL) {
+      continue;
+    }
 
     // check ip
     if (ntohs(ether_hdr->ether_type) != ETHER_TYPE_IPV4) {
@@ -406,6 +409,8 @@ void start_routing() {
 
   get_host_mac(handle, host_ip, &host_mac);
 
+  printf("[ router ] creating thread...\n");
+
   // start and detach
   HANDLE thread = CreateThread(
     NULL, 0, (LPTHREAD_START_ROUTINE)router_handler, (LPVOID)handle, 0, NULL
@@ -457,9 +462,12 @@ void cli() {
       mask = a | (b << 8) | (c << 16) | (d << 24);
 
       route_entry_t* entry = route_table_find(&route_table, dst_ip, mask);
+      
       if (entry != NULL) {
         route_table_remove(entry);
         route_table_free(entry);
+      } else {
+        printf("no such route entry\n");
       }
     } else if (strcmp(command, "show") == 0) {
       char subcommand[256];
